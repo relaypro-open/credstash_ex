@@ -7,12 +7,11 @@ defmodule CredstashEx.Credstash do
   @kms_key <<"alias/credstash">>
 
   def get_secret(name, table, version) do
-    #{:ok, ciphertext} = :erlcloud_ddb2.get_item(table, [{"name", {:s, name}}, {"version", {:s, version}}], ddbConfig)
     ciphertext = Dynamo.get_item(table, %{name: name, version: version})
     |> ExAws.request!
     |> Dynamo.decode_item(as: CredstashEx.Db.Secret)
     secret = decrypt_secret(ciphertext)
-    #IO.inspect(secret)
+    secret
   end
 
 
@@ -42,23 +41,22 @@ defmodule CredstashEx.Credstash do
     data = encrypt_secret(name, secret, version)
     secret_struct = %CredstashEx.Db.Secret{name: data.name, version: data.version, contents: data.contents, digest: data.digest, hmac: data.hmac, key: data.key}
     Dynamo.put_item(table, secret_struct) |> ExAws.request!
-    #ddbResponse = :erlcloud_ddb2.put_item(table, data, [], ddbConfig)
   end
 
 
-  def encrypt_secret(name, plaintext, version \\ @default_initial_version) do
+  def encrypt_secret(name, secret, version \\ @default_initial_version) do
     kmsKey = @kms_key
     numberOfBytes = 64
     kmsResponse = KMS.generate_data_key(kmsKey, [number_of_bytes: numberOfBytes, encryption_context: %{}])
     |> ExAws.request!
     IO.inspect(kmsResponse)
     wrappedKey = Map.get(kmsResponse, "CiphertextBlob")
-    plaintext = Map.get(kmsResponse, "Plaintext")
+    plaintext = :base64.decode(Map.get(kmsResponse, "Plaintext"))
     IO.inspect(plaintext)
     dataKey = :binary.part(plaintext, 0, 32)
     hmacKey = :binary.part(plaintext, 32, byte_size(plaintext) - byte_size(dataKey))
     ivec = <<1::128>>
-    text = :crypto.crypto_one_time(:aes_ctr, dataKey, ivec, plaintext, [{:encrypt,:true}] )
+    text = :crypto.crypto_one_time(:aes_ctr, dataKey, ivec, secret, [{:encrypt,:true}] )
     digest = :crypto.mac(:hmac, :sha256, hmacKey, text)
     b64Hmac = hexlify(digest)
     data = %{name: name, version: version, key: wrappedKey, contents: :base64.encode(text), hmac: b64Hmac, digest: "SHA256"}
