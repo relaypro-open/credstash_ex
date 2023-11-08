@@ -33,7 +33,6 @@ defmodule CredstashEx.Credstash do
           true ->
             {:notfound, []}
           false ->
-            #decrypt_secret(hd(Map.get(versionResponse,"Items")))
             decrypt_secret(hd(versionResponseDecoded))
         end
     end
@@ -51,10 +50,8 @@ defmodule CredstashEx.Credstash do
     numberOfBytes = 64
     kmsResponse = KMS.generate_data_key(kmsKey, [number_of_bytes: numberOfBytes, encryption_context: %{}])
     |> ExAws.request!
-    IO.inspect(kmsResponse)
     wrappedKey = Map.get(kmsResponse, "CiphertextBlob")
     plaintext = :base64.decode(Map.get(kmsResponse, "Plaintext"))
-    IO.inspect(plaintext)
     dataKey = :binary.part(plaintext, 0, 32)
     hmacKey = :binary.part(plaintext, 32, byte_size(plaintext) - byte_size(dataKey))
     ivec = <<1::128>>
@@ -65,7 +62,7 @@ defmodule CredstashEx.Credstash do
     data
   end
 
-  defp decrypt_secret(ciphertext) do
+  def decrypt_secret(ciphertext) do
     keyBase64 = ciphertext.key
     hmac = ciphertext.hmac
     contents = ciphertext.contents
