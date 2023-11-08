@@ -14,25 +14,27 @@ defmodule CredstashEx.Credstash do
     secret
   end
 
-
   def get_secret(name, table \\ @default_ddb_table) do
     versionResponse = Dynamo.query(table,
       limit: 1,
+      consistent_read: true,
+      scan_index_forward: false,
       key_condition_expression: "#N = :name",
       expression_attribute_names: ["#N": "name"],
       expression_attribute_values: [name: name])
       |> ExAws.request!
-      |> Dynamo.decode_item(as: CredstashEx.Db.Secret)
-    case(versionResponse) do
+    count = Map.get(versionResponse,"Count")
+    versionResponseDecoded = versionResponse |> Dynamo.decode_item(as: CredstashEx.Db.Secret)
+    case(versionResponseDecoded) do
       [] ->
         {:notfound, []}
       _ ->
-        count = versionResponse.count
         case(count == 0) do
           true ->
             {:notfound, []}
           false ->
-            decrypt_secret(hd(Map.get(versionResponse,"Items")))
+            #decrypt_secret(hd(Map.get(versionResponse,"Items")))
+            decrypt_secret(hd(versionResponseDecoded))
         end
     end
   end
